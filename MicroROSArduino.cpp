@@ -54,7 +54,7 @@ void MicroROSArduino::beginBatteryBroadcaster(void (*battery_function)(rcl_timer
     battery_function) != RCL_RET_OK) {
     errorLoop();
   }
-  // create executor
+  // create battery executor
   if (rclc_executor_init(&battery_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
     errorLoop();
   }
@@ -89,14 +89,14 @@ void MicroROSArduino::beginRangeBroadcaster(void (*range_function)(rcl_timer_t*,
     range_function) != RCL_RET_OK) {
     errorLoop();
   }
-  // create executor
+  // create range executor
   if (rclc_executor_init(&range_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
     errorLoop();
   }
   if (rclc_executor_add_timer(&range_executor, &range_timer) != RCL_RET_OK) {
     errorLoop();
   }
-  // initialize battery msg data
+  // initialize range msg data
   range_msg.range = 0.9;
   range = true;
 }
@@ -124,7 +124,7 @@ void MicroROSArduino::beginImuBroadcaster(void (*imu_function)(rcl_timer_t*, int
     imu_function) != RCL_RET_OK) {
     errorLoop();
   }
-  // create executor
+  // create imu executor
   if (rclc_executor_init(&imu_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
     errorLoop();
   }
@@ -151,7 +151,7 @@ void MicroROSArduino::beginJointStateBroadcaster(void (*joint_state_function)(rc
     "arduino/joint_states") != RCL_RET_OK) {
     errorLoop();
   }
-  // create joint timer,
+  // create joint state timer,
   if (rclc_timer_init_default(
     &joint_state_timer,
     &support,
@@ -159,7 +159,7 @@ void MicroROSArduino::beginJointStateBroadcaster(void (*joint_state_function)(rc
     joint_state_function) != RCL_RET_OK) {
     errorLoop();
   }
-  // create executor
+  // create joint state executor
   if (rclc_executor_init(&joint_state_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
     errorLoop();
   }
@@ -206,14 +206,14 @@ void MicroROSArduino::beginJointStateCommander(void (*command_function)(const vo
     "arduino/commands") != RCL_RET_OK) {
     errorLoop();
   }
-  // create executor
+  // create joint state executor
   if (rclc_executor_init(&command_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
     errorLoop();
   }
   if (rclc_executor_add_subscription(&command_executor, &joint_state_commander, &command_msg, command_function, ON_NEW_DATA) != RCL_RET_OK) {
     errorLoop();
   }
-  // initialize js cmd data
+  // initialize joint state cmd data
   #define NUM_JOINTS 2
   String joint1 = "gear_left_shaft";
   String joint2 = "gear_right_shaft";
