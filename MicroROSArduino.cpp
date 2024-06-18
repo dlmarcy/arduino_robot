@@ -24,7 +24,12 @@ MicroROSArduino::MicroROSArduino()
 
 void MicroROSArduino::errorLoop()
 {
-  while(1);
+  while(1) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(800);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(200);
+  }
 }
 
 void MicroROSArduino::spin()
@@ -43,14 +48,14 @@ void MicroROSArduino::beginBatteryBroadcaster(void (*battery_function)(rcl_timer
     &battery_broadcaster,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, BatteryState),
-    "arduino/battery") != RCL_RET_OK) {
+    String("arduino/" + topic).c_str()) != RCL_RET_OK) {
     errorLoop();
   }
   // create battery timer,
   if (rclc_timer_init_default(
     &battery_timer,
     &support,
-    RCL_MS_TO_NS(1000),
+    RCL_MS_TO_NS(1000/rate),
     battery_function) != RCL_RET_OK) {
     errorLoop();
   }
@@ -78,14 +83,14 @@ void MicroROSArduino::beginRangeBroadcaster(void (*range_function)(rcl_timer_t*,
     &range_broadcaster,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Range),
-    "arduino/range") != RCL_RET_OK) {
+    String("arduino/" + topic).c_str()) != RCL_RET_OK) {
     errorLoop();
   }
   // create range timer,
   if (rclc_timer_init_default(
     &range_timer,
     &support,
-    RCL_MS_TO_NS(200),
+    RCL_MS_TO_NS(1000/rate),
     range_function) != RCL_RET_OK) {
     errorLoop();
   }
@@ -113,14 +118,14 @@ void MicroROSArduino::beginImuBroadcaster(void (*imu_function)(rcl_timer_t*, int
     &imu_broadcaster,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-    "arduino/imu") != RCL_RET_OK) {
+    String("arduino/" + topic).c_str()) != RCL_RET_OK) {
     errorLoop();
   }
   // create imu timer,
   if (rclc_timer_init_default(
     &imu_timer,
     &support,
-    RCL_MS_TO_NS(50),
+    RCL_MS_TO_NS(1000/rate),
     imu_function) != RCL_RET_OK) {
     errorLoop();
   }
@@ -141,21 +146,21 @@ void MicroROSArduino::publishImu()
     if (rcl_publish(&imu_broadcaster, &imu_msg, NULL) != RCL_RET_OK) {}
 }
 
-void MicroROSArduino::beginJointStateBroadcaster(void (*joint_state_function)(rcl_timer_t*, int64_t), String topic, float rate, int num, String[] names)
+void MicroROSArduino::beginJointStateBroadcaster(void (*joint_state_function)(rcl_timer_t*, int64_t), String topic, float rate, int NumJoints, String JointNames[])
 {
   // create joint state publisher
   if (rclc_publisher_init_default(
     &joint_state_broadcaster,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
-    "arduino/joint_states") != RCL_RET_OK) {
+    String("arduino/" + topic).c_str()) != RCL_RET_OK) {
     errorLoop();
   }
   // create joint state timer,
   if (rclc_timer_init_default(
     &joint_state_timer,
     &support,
-    RCL_MS_TO_NS(100),
+    RCL_MS_TO_NS(1000/rate),
     joint_state_function) != RCL_RET_OK) {
     errorLoop();
   }
@@ -167,6 +172,7 @@ void MicroROSArduino::beginJointStateBroadcaster(void (*joint_state_function)(rc
     errorLoop();
   }
   // initialize joint state msg data
+/*  
   #define ARRAY_LEN 2
   String joint1 = "gear_left_shaft";
   String joint2 = "gear_right_shaft";
@@ -189,6 +195,22 @@ void MicroROSArduino::beginJointStateBroadcaster(void (*joint_state_function)(rc
   joint_state_msg.effort.data[0] = 100;
   joint_state_msg.effort.data[1] = 200;
   joint_state = true;
+*/  
+  
+  rosidl_runtime_c__String__Sequence__init(&joint_state_msg.name, NumJoints);
+  for ( int i = 0; i < NumJoints; i++ ) {
+     rosidl_runtime_c__String__assignn(&joint_state_msg.name.data[i], JointNames[i].c_str(), JointNames[i].length());
+  }
+  joint_state_msg.position.data = (double *) malloc(NumJoints * sizeof(double));
+  joint_state_msg.position.size= NumJoints;
+  joint_state_msg.position.capacity = NumJoints;
+  joint_state_msg.velocity.data = (double *) malloc(NumJoints * sizeof(double));
+  joint_state_msg.velocity.size = NumJoints;
+  joint_state_msg.velocity.capacity = NumJoints;
+  joint_state_msg.effort.data = (double *) malloc(NumJoints * sizeof(double));
+  joint_state_msg.effort.size = NumJoints;
+  joint_state_msg.effort.capacity = NumJoints;
+  joint_state = true;
 }
 
 void MicroROSArduino::publishJointState()
@@ -196,14 +218,14 @@ void MicroROSArduino::publishJointState()
     if (rcl_publish(&joint_state_broadcaster, &joint_state_msg, NULL) != RCL_RET_OK) {}
 }
 
-void MicroROSArduino::beginJointStateCommander(void (*command_function)(const void*), String topic, float rate, int num, String[] names)
+void MicroROSArduino::beginJointStateCommander(void (*command_function)(const void*), String topic, int NumJoints, String JointNames[])
 {
   // create joint state commander
   if (rclc_subscription_init_default(
     &joint_state_commander,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
-    "arduino/commands") != RCL_RET_OK) {
+    String("arduino/" + topic).c_str()) != RCL_RET_OK) {
     errorLoop();
   }
   // create joint state executor
@@ -214,6 +236,7 @@ void MicroROSArduino::beginJointStateCommander(void (*command_function)(const vo
     errorLoop();
   }
   // initialize joint state cmd data
+/*  
   #define NUM_JOINTS 2
   String joint1 = "gear_left_shaft";
   String joint2 = "gear_right_shaft";
@@ -229,6 +252,22 @@ void MicroROSArduino::beginJointStateCommander(void (*command_function)(const vo
   command_msg.effort.data = (double *) malloc(NUM_JOINTS * sizeof(double));
   command_msg.effort.size = NUM_JOINTS;
   command_msg.effort.capacity = NUM_JOINTS;
+  command = true;
+*/
+
+  rosidl_runtime_c__String__Sequence__init(&command_msg.name, NumJoints);
+  for ( int i = 0; i < NumJoints; i++ ) {
+     rosidl_runtime_c__String__assignn(&command_msg.name.data[i], JointNames[i].c_str(), JointNames[i].length());
+  }
+  command_msg.position.data = (double *) malloc(NumJoints * sizeof(double));
+  command_msg.position.size= NumJoints;
+  command_msg.position.capacity = NumJoints;
+  command_msg.velocity.data = (double *) malloc(NumJoints * sizeof(double));
+  command_msg.velocity.size = NumJoints;
+  command_msg.velocity.capacity = NumJoints;
+  command_msg.effort.data = (double *) malloc(NumJoints * sizeof(double));
+  command_msg.effort.size = NumJoints;
+  command_msg.effort.capacity = NumJoints;
   command = true;
 }
 

@@ -32,11 +32,11 @@ class MicroROSArduino
     void publishImu();
     sensor_msgs__msg__Imu imu_msg;
     // joint state broadcaster
-    void beginJointStateBroadcaster(void (*joint_state_function)(rcl_timer_t*, int64_t), String topic, float rate, int num, String[] names);
+    void beginJointStateBroadcaster(void (*joint_state_function)(rcl_timer_t*, int64_t), String topic, float rate, int NumJoints, String JointNames[]);
     void publishJointState();
     sensor_msgs__msg__JointState joint_state_msg;
     // joint state commander
-    void beginJointStateCommander(void (*command_function)(const void*), String topic, float rate, int num, String[] names);
+    void beginJointStateCommander(void (*command_function)(const void*), String topic, int NumJoints, String JointNames[]);
     sensor_msgs__msg__JointState command_msg;
   private:
     rcl_allocator_t allocator;
