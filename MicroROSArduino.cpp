@@ -36,7 +36,7 @@ void MicroROSArduino::spin()
   if (command) {rclc_executor_spin_some(&command_executor, RCL_MS_TO_NS(20));}
 }
 
-void MicroROSArduino::beginBatteryBroadcaster(void (*battery_function)(rcl_timer_t*, int64_t))
+void MicroROSArduino::beginBatteryBroadcaster(void (*battery_function)(rcl_timer_t*, int64_t), String topic, float rate)
 {
   // create battery publisher
   if (rclc_publisher_init_default(
@@ -71,7 +71,7 @@ void MicroROSArduino::publishBattery()
     if (rcl_publish(&battery_broadcaster, &battery_msg, NULL) != RCL_RET_OK) {}
 }
 
-void MicroROSArduino::beginRangeBroadcaster(void (*range_function)(rcl_timer_t*, int64_t))
+void MicroROSArduino::beginRangeBroadcaster(void (*range_function)(rcl_timer_t*, int64_t), String topic, float rate)
 {
   // create range publisher
   if (rclc_publisher_init_default(
@@ -106,7 +106,7 @@ void MicroROSArduino::publishRange()
     if (rcl_publish(&range_broadcaster, &range_msg, NULL) != RCL_RET_OK) {}
 }
 
-void MicroROSArduino::beginImuBroadcaster(void (*imu_function)(rcl_timer_t*, int64_t))
+void MicroROSArduino::beginImuBroadcaster(void (*imu_function)(rcl_timer_t*, int64_t), String topic, float rate)
 {
   // create imu publisher
   if (rclc_publisher_init_default(
@@ -141,7 +141,7 @@ void MicroROSArduino::publishImu()
     if (rcl_publish(&imu_broadcaster, &imu_msg, NULL) != RCL_RET_OK) {}
 }
 
-void MicroROSArduino::beginJointStateBroadcaster(void (*joint_state_function)(rcl_timer_t*, int64_t))
+void MicroROSArduino::beginJointStateBroadcaster(void (*joint_state_function)(rcl_timer_t*, int64_t), String topic, float rate, int num, String[] names)
 {
   // create joint state publisher
   if (rclc_publisher_init_default(
@@ -196,7 +196,7 @@ void MicroROSArduino::publishJointState()
     if (rcl_publish(&joint_state_broadcaster, &joint_state_msg, NULL) != RCL_RET_OK) {}
 }
 
-void MicroROSArduino::beginJointStateCommander(void (*command_function)(const void*))
+void MicroROSArduino::beginJointStateCommander(void (*command_function)(const void*), String topic, float rate, int num, String[] names)
 {
   // create joint state commander
   if (rclc_subscription_init_default(
