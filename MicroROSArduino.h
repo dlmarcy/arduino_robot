@@ -20,23 +20,23 @@ class MicroROSArduino
     void errorLoop();
     void spin();
     // battery broadcaster
-    void beginBatteryBroadcaster(void (*battery_function)(rcl_timer_t*, int64_t), float rate, String topic);
+    void beginBatteryBroadcaster(void (*battery_function)(rcl_timer_t*, int64_t), String topic, float rate);
     void publishBattery();
     sensor_msgs__msg__BatteryState battery_msg;
     // range broadcaster
-    void beginRangeBroadcaster(void (*range_function)(rcl_timer_t*, int64_t), float rate, String topic);
+    void beginRangeBroadcaster(void (*range_function)(rcl_timer_t*, int64_t), String topic, float rate);
     void publishRange();
     sensor_msgs__msg__Range range_msg;
     // imu broadcaster
-    void beginImuBroadcaster(void (*imu_function)(rcl_timer_t*, int64_t), float rate, String topic);
+    void beginImuBroadcaster(void (*imu_function)(rcl_timer_t*, int64_t), String topic, float rate);
     void publishImu();
     sensor_msgs__msg__Imu imu_msg;
     // joint state broadcaster
-    void beginJointStateBroadcaster(void (*joint_state_function)(rcl_timer_t*, int64_t), float rate, String topic, int num, String[] names);
+    void beginJointStateBroadcaster(void (*joint_state_function)(rcl_timer_t*, int64_t), String topic, float rate, int num, String[] names);
     void publishJointState();
     sensor_msgs__msg__JointState joint_state_msg;
     // joint state commander
-    void beginJointStateCommander(void (*command_function)(const void*), float rate, String topic, int num, String[] names);
+    void beginJointStateCommander(void (*command_function)(const void*), String topic, float rate, int num, String[] names);
     sensor_msgs__msg__JointState command_msg;
   private:
     rcl_allocator_t allocator;
