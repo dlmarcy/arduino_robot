@@ -204,12 +204,21 @@ void MicroROSArduino::beginJointStateBroadcaster(void (*joint_state_function)(rc
   joint_state_msg.position.data = (double *) malloc(NumJoints * sizeof(double));
   joint_state_msg.position.size= NumJoints;
   joint_state_msg.position.capacity = NumJoints;
+  for ( int i = 0; i < NumJoints; i++ ) {
+     joint_state_msg.position.data[i] = 0.0;
+  }
   joint_state_msg.velocity.data = (double *) malloc(NumJoints * sizeof(double));
   joint_state_msg.velocity.size = NumJoints;
   joint_state_msg.velocity.capacity = NumJoints;
+  for ( int i = 0; i < NumJoints; i++ ) {
+     joint_state_msg.velocity.data[i] = 0.0;
+  }
   joint_state_msg.effort.data = (double *) malloc(NumJoints * sizeof(double));
   joint_state_msg.effort.size = NumJoints;
   joint_state_msg.effort.capacity = NumJoints;
+  for ( int i = 0; i < NumJoints; i++ ) {
+     joint_state_msg.effort.data[i] = 0.0;
+  }
   joint_state = true;
 }
 
