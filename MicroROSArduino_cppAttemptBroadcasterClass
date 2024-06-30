@@ -1,0 +1,445 @@
+#include "Arduino.h"
+#include "MicroROSArduino.h"
+
+
+Broadcaster::Broadcaster()
+{
+}
+void Broadcaster::init(void (*function)(rcl_timer_t*, int64_t), String topic, float rate)
+{
+  bc_function = function;
+  bc_topic = topic;
+  bc_rate = rate;
+}
+
+//rclc_publisher_init_default(
+//  rcl_publisher_t * publisher,
+//  const rcl_node_t * node,
+//  const rosidl_message_type_support_t * type_support,
+//  const char * topic_name);
+bool Broadcaster::create(rcl_allocator_t* allocator, rclc_support_t* support, rcl_node_t* node)
+{
+  // create publisher
+  if (rclc_publisher_init_default(
+    &broadcaster,
+    node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, BatteryState),
+    String("arduino/" + bc_topic).c_str()) != RCL_RET_OK) {
+    return false;
+  }
+  // create timer,
+  if (rclc_timer_init_default(
+    &bc_timer,
+    support,
+    RCL_MS_TO_NS(1000/bc_rate),
+    bc_function) != RCL_RET_OK) {
+    return false;
+  }
+        
+  // create executor
+  if (rclc_executor_init(&bc_executor, &(support->context), 1, allocator) != RCL_RET_OK) {
+    return false;
+  }
+  if (rclc_executor_add_timer(&bc_executor, &bc_timer) != RCL_RET_OK) {
+    return false;
+  }
+  
+  return true;
+}
+
+bool Broadcaster::end(rcl_node_t* node)
+{
+  if (rcl_publisher_fini(&broadcaster, node) != RCL_RET_OK)
+  	return false;
+  if (rcl_timer_fini(&bc_timer) != RCL_RET_OK) 
+  	return false;
+  rclc_executor_fini(&bc_executor);
+  return true;
+}
+
+//---------------------------------------------------------------
+
+MicroROSArduino::MicroROSArduino()
+{
+  // create transport
+  set_microros_transports();
+  battery = false;
+  range = false;
+  imu = false;
+  joint_state = false;
+  command = false;
+  // init finite state machine to auto re-connect to micro_ros_agent
+  state = WAITING_AGENT;
+}
+
+void MicroROSArduino::beginSession()
+{
+  // create allocator
+  allocator = rcl_get_default_allocator();
+  // create init_options
+  if (rclc_support_init(&support, 0, NULL, &allocator) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create node
+  if (rclc_node_init_default(&node, "micro_ros_arduino_node", "", &support) != RCL_RET_OK) {
+    errorLoop();
+  }
+}
+
+void MicroROSArduino::endSession()
+{
+  rmw_context_t * rmw_context = rcl_context_get_rmw_context(&support.context);
+  (void) rmw_uros_set_context_entity_destroy_session_timeout(rmw_context, 0);
+}
+
+void MicroROSArduino::endNode()
+{
+  if (rcl_node_fini(&node) != RCL_RET_OK) {errorLoop();}
+  rclc_support_fini(&support);
+}
+
+void MicroROSArduino::errorLoop()
+{
+  while(1) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(800);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(200);
+  }
+}
+
+void MicroROSArduino::spin()
+{
+  switch(state) {
+    case WAITING_AGENT:
+      state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_AVAILABLE : WAITING_AGENT;
+      digitalWrite(14, HIGH); // g1
+      digitalWrite(15, LOW); // r1
+      digitalWrite(22, LOW); // g2
+      digitalWrite(23, LOW); // r2
+      break;
+    case AGENT_AVAILABLE:
+      beginSession();
+ //     if (battery) {createBatteryBroadcaster();}
+      if (battery) {
+      	if ( battery_bc.create(&allocator, &support, &node) == false )
+      	   errorLoop();
+      }
+      if (range) {createRangeBroadcaster();}
+      if (imu) {createImuBroadcaster();}
+      if (joint_state) {createJointStateBroadcaster();}
+      if (command) {createJointStateCommander();}
+      //digitalWrite(LED_BUILTIN, LOW);
+      digitalWrite(14, LOW); // g1
+      digitalWrite(15, HIGH); // r1
+      digitalWrite(22, LOW); // g2
+      digitalWrite(23, LOW); // r2
+      state = AGENT_CONNECTED;
+      break;
+    case AGENT_CONNECTED:
+      state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_CONNECTED : AGENT_DISCONNECTED;
+      if (state == AGENT_CONNECTED) {
+ //2DO       if (battery) {rclc_executor_spin_some(&battery_executor, RCL_MS_TO_NS(20));}
+        if (range) {rclc_executor_spin_some(&range_executor, RCL_MS_TO_NS(20));}
+        if (imu) {rclc_executor_spin_some(&imu_executor, RCL_MS_TO_NS(20));}
+        if (joint_state) {rclc_executor_spin_some(&joint_state_executor, RCL_MS_TO_NS(20));}
+        if (command) {rclc_executor_spin_some(&command_executor, RCL_MS_TO_NS(20));}
+        digitalWrite(14, LOW); // g1
+        digitalWrite(15, LOW); // r1
+        digitalWrite(22, HIGH); // g2
+        digitalWrite(23, LOW); // r2
+      }
+      break;
+    case AGENT_DISCONNECTED:
+      endSession();
+ //     if (battery) {endBatteryBroadcaster();}
+      if ( battery ) {
+         if ( battery_bc.end(&node) == false )
+         	errorLoop();
+      }
+      if (range) {endRangeBroadcaster();}
+      if (imu) {endImuBroadcaster();}
+      if (joint_state) {endJointStateBroadcaster();}
+      if (command) {endJointStateCommander();}
+      endNode();
+      digitalWrite(14, LOW); // g1
+      digitalWrite(15, LOW); // r1
+      digitalWrite(22, LOW); // g2
+      digitalWrite(23, HIGH); // r2
+      state = WAITING_AGENT;
+      break;
+    default:
+      break;
+  }
+}
+
+void MicroROSArduino::beginBatteryBroadcaster(void (*function)(rcl_timer_t*, int64_t), String topic, float rate)
+{
+  //battery_function = function;
+  //battery_topic = topic;
+  //battery_rate = rate;
+  battery_bc.init(function, topic, rate);
+  battery = true;
+}
+/*
+void MicroROSArduino::createBatteryBroadcaster()
+{
+  // create battery publisher
+  if (rclc_publisher_init_default(
+    &battery_broadcaster,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, BatteryState),
+    String("arduino/" + battery_topic).c_str()) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create battery timer,
+  if (rclc_timer_init_default(
+    &battery_timer,
+    &support,
+    RCL_MS_TO_NS(1000/battery_rate),
+    battery_function) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create battery executor
+  if (rclc_executor_init(&battery_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
+    errorLoop();
+  }
+  if (rclc_executor_add_timer(&battery_executor, &battery_timer) != RCL_RET_OK) {
+    errorLoop();
+  }  
+}
+
+void MicroROSArduino::endBatteryBroadcaster()
+{
+  if (rcl_publisher_fini(&battery_broadcaster, &node) != RCL_RET_OK) {errorLoop();}
+  if (rcl_timer_fini(&battery_timer) != RCL_RET_OK) {errorLoop();}
+  rclc_executor_fini(&battery_executor);
+  
+}
+*/
+
+void MicroROSArduino::publishBattery()
+{
+//  if (rcl_publish(&battery_broadcaster, &battery_msg, NULL) != RCL_RET_OK) {}
+  if (rcl_publish(&(battery_bc.broadcaster), &battery_msg, NULL) != RCL_RET_OK) {}
+  {
+  	 errorLoop();
+  }
+}
+
+void MicroROSArduino::beginRangeBroadcaster(void (*function)(rcl_timer_t*, int64_t), String topic, float rate)
+{
+  range_function = function;
+  range_topic = topic;
+  range_rate = rate;
+  //createRangeBroadcaster();
+  range = true;
+}
+
+void MicroROSArduino::createRangeBroadcaster()
+{
+  // create range publisher
+  if (rclc_publisher_init_default(
+    &range_broadcaster,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Range),
+    String("arduino/" + range_topic).c_str()) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create range timer,
+  if (rclc_timer_init_default(
+    &range_timer,
+    &support,
+    RCL_MS_TO_NS(1000/range_rate),
+    range_function) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create range executor
+  if (rclc_executor_init(&range_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
+    errorLoop();
+  }
+  if (rclc_executor_add_timer(&range_executor, &range_timer) != RCL_RET_OK) {
+    errorLoop();
+  }
+}
+
+void MicroROSArduino::endRangeBroadcaster()
+{
+  if (rcl_publisher_fini(&range_broadcaster, &node) != RCL_RET_OK) {errorLoop();}
+  if (rcl_timer_fini(&range_timer) != RCL_RET_OK) {errorLoop();}
+  rclc_executor_fini(&range_executor);
+}
+
+void MicroROSArduino::publishRange()
+{
+  if (rcl_publish(&range_broadcaster, &range_msg, NULL) != RCL_RET_OK) {}
+}
+
+void MicroROSArduino::beginImuBroadcaster(void (*function)(rcl_timer_t*, int64_t), String topic, float rate)
+{
+  imu_function = function;
+  imu_topic = topic;
+  imu_rate = rate;
+  //createImuBroadcaster();
+  imu = true;
+}
+
+void MicroROSArduino::createImuBroadcaster()
+{
+  // create imu publisher
+  if (rclc_publisher_init_default(
+    &imu_broadcaster,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
+    String("arduino/" + imu_topic).c_str()) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create imu timer,
+  if (rclc_timer_init_default(
+    &imu_timer,
+    &support,
+    RCL_MS_TO_NS(1000/imu_rate),
+    imu_function) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create imu executor
+  if (rclc_executor_init(&imu_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
+    errorLoop();
+  }
+  if (rclc_executor_add_timer(&imu_executor, &imu_timer) != RCL_RET_OK) {
+    errorLoop();
+  }
+}
+
+void MicroROSArduino::endImuBroadcaster()
+{
+  if (rcl_publisher_fini(&imu_broadcaster, &node) != RCL_RET_OK) {errorLoop();}
+  if (rcl_timer_fini(&imu_timer) != RCL_RET_OK) {errorLoop();}
+  rclc_executor_fini(&imu_executor);
+}
+
+void MicroROSArduino::publishImu()
+{
+  if (rcl_publish(&imu_broadcaster, &imu_msg, NULL) != RCL_RET_OK) {}
+}
+
+void MicroROSArduino::beginJointStateBroadcaster(void (*function)(rcl_timer_t*, int64_t), String topic, float rate, int NumJoints, String JointNames[])
+{
+  joint_state_function = function;
+  joint_state_topic = topic;
+  joint_state_rate = rate;
+  // create joint state msg data
+  rosidl_runtime_c__String__Sequence__init(&joint_state_msg.name, NumJoints);
+  for ( int i = 0; i < NumJoints; i++ ) {
+     rosidl_runtime_c__String__assignn(&joint_state_msg.name.data[i], JointNames[i].c_str(), JointNames[i].length());
+  }
+  joint_state_msg.position.data = (double *) malloc(NumJoints * sizeof(double));
+  joint_state_msg.position.size= NumJoints;
+  joint_state_msg.position.capacity = NumJoints;
+  for ( int i = 0; i < NumJoints; i++ ) {
+     joint_state_msg.position.data[i] = 0.0;
+  }
+  joint_state_msg.velocity.data = (double *) malloc(NumJoints * sizeof(double));
+  joint_state_msg.velocity.size = NumJoints;
+  joint_state_msg.velocity.capacity = NumJoints;
+  for ( int i = 0; i < NumJoints; i++ ) {
+     joint_state_msg.velocity.data[i] = 0.0;
+  }
+  joint_state_msg.effort.data = (double *) malloc(NumJoints * sizeof(double));
+  joint_state_msg.effort.size = NumJoints;
+  joint_state_msg.effort.capacity = NumJoints;
+  for ( int i = 0; i < NumJoints; i++ ) {
+     joint_state_msg.effort.data[i] = 0.0;
+  }
+  //createJointStateBroadcaster();
+  joint_state = true;
+}
+
+void MicroROSArduino::createJointStateBroadcaster()
+{
+  // create joint state publisher
+  if (rclc_publisher_init_default(
+    &joint_state_broadcaster,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
+    String("arduino/" + joint_state_topic).c_str()) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create joint state timer,
+  if (rclc_timer_init_default(
+    &joint_state_timer,
+    &support,
+    RCL_MS_TO_NS(1000/joint_state_rate),
+    joint_state_function) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create joint state executor
+  if (rclc_executor_init(&joint_state_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
+    errorLoop();
+  }
+  if (rclc_executor_add_timer(&joint_state_executor, &joint_state_timer) != RCL_RET_OK) {
+    errorLoop();
+  }
+}
+
+void MicroROSArduino::endJointStateBroadcaster()
+{
+  if (rcl_publisher_fini(&joint_state_broadcaster, &node) != RCL_RET_OK) {errorLoop();}
+  if (rcl_timer_fini(&joint_state_timer) != RCL_RET_OK) {errorLoop();}
+  rclc_executor_fini(&joint_state_executor);
+}
+
+void MicroROSArduino::publishJointState()
+{
+  if (rcl_publish(&joint_state_broadcaster, &joint_state_msg, NULL) != RCL_RET_OK) {}
+}
+
+void MicroROSArduino::beginJointStateCommander(void (*function)(const void*), String topic, int NumJoints, String JointNames[])
+{
+  command_function = function;
+  command_topic = topic;
+  // create joint state command data
+  rosidl_runtime_c__String__Sequence__init(&command_msg.name, NumJoints);
+  for ( int i = 0; i < NumJoints; i++ ) {
+     rosidl_runtime_c__String__assignn(&command_msg.name.data[i], JointNames[i].c_str(), JointNames[i].length());
+  }
+  command_msg.position.data = (double *) malloc(NumJoints * sizeof(double));
+  command_msg.position.size= NumJoints;
+  command_msg.position.capacity = NumJoints;
+  command_msg.velocity.data = (double *) malloc(NumJoints * sizeof(double));
+  command_msg.velocity.size = NumJoints;
+  command_msg.velocity.capacity = NumJoints;
+  command_msg.effort.data = (double *) malloc(NumJoints * sizeof(double));
+  command_msg.effort.size = NumJoints;
+  command_msg.effort.capacity = NumJoints;
+  //createJointStateCommander();
+  command = true;
+}
+
+void MicroROSArduino::createJointStateCommander()
+{
+  // create joint state commander
+  if (rclc_subscription_init_default(
+    &joint_state_commander,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
+    String("arduino/" + command_topic).c_str()) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create joint state command executor
+  if (rclc_executor_init(&command_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
+    errorLoop();
+  }
+  if (rclc_executor_add_subscription(&command_executor, &joint_state_commander, &command_msg, command_function, ON_NEW_DATA) != RCL_RET_OK) {
+    errorLoop();
+  }
+}
+
+void MicroROSArduino::endJointStateCommander()
+{
+  if (rcl_subscription_fini(&joint_state_commander, &node) != RCL_RET_OK) {errorLoop();}
+  rclc_executor_fini(&command_executor);
+}
+
+
+
