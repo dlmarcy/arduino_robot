@@ -1,6 +1,6 @@
 #include "Arduino.h"
 #include "MicroROSArduino.h"
-jjjhhh
+
 MicroROSArduino::MicroROSArduino()
 {
   //create transport
