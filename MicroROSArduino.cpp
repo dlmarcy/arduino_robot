@@ -1,17 +1,19 @@
-#include "Arduino.h"
+
 #include "MicroROSArduino.h"
 
 MicroROSArduino::MicroROSArduino()
 {
   // create transport
   set_microros_transports();
-  // create allocator, init_options, node
-  //beginSession();
-  // start with no publishers or subscribers
-  battery = false;
-  range = false;
-  imu = false;
-  joint_state = false;
+
+  numSensors = 0;
+  numBatterys = 0;
+  numIMUs = 0;
+  for ( int i = 0; i < MAX_SENSORS; i++ )
+  {
+  	sensors[i].msgIndex = -1;
+  }	
+  
   command = false;
   // init finite state machine to auto re-connect to micro_ros_agent
   state = WAITING_AGENT;
@@ -62,15 +64,14 @@ void MicroROSArduino::spin()
       digitalWrite(15, LOW); // r1
       digitalWrite(22, LOW); // g2
       digitalWrite(23, LOW); // r2
+      delay(200);
       break;
     case AGENT_AVAILABLE:
       beginSession();
-      if (battery) {createBatteryBroadcaster();}
-      if (range) {createRangeBroadcaster();}
-      if (imu) {createImuBroadcaster();}
-      if (joint_state) {createJointStateBroadcaster();}
+	  createBroadcasters();
+	  
       if (command) {createJointStateCommander();}
-      //digitalWrite(LED_BUILTIN, LOW);
+      
       digitalWrite(14, LOW); // g1
       digitalWrite(15, HIGH); // r1
       digitalWrite(22, LOW); // g2
@@ -80,10 +81,8 @@ void MicroROSArduino::spin()
     case AGENT_CONNECTED:
       state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_CONNECTED : AGENT_DISCONNECTED;
       if (state == AGENT_CONNECTED) {
-        if (battery) {rclc_executor_spin_some(&battery_executor, RCL_MS_TO_NS(20));}
-        if (range) {rclc_executor_spin_some(&range_executor, RCL_MS_TO_NS(20));}
-        if (imu) {rclc_executor_spin_some(&imu_executor, RCL_MS_TO_NS(20));}
-        if (joint_state) {rclc_executor_spin_some(&joint_state_executor, RCL_MS_TO_NS(20));}
+        spinBroadcasters();
+        
         if (command) {rclc_executor_spin_some(&command_executor, RCL_MS_TO_NS(20));}
         digitalWrite(14, LOW); // g1
         digitalWrite(15, LOW); // r1
@@ -93,10 +92,8 @@ void MicroROSArduino::spin()
       break;
     case AGENT_DISCONNECTED:
       endSession();
-      if (battery) {endBatteryBroadcaster();}
-      if (range) {endRangeBroadcaster();}
-      if (imu) {endImuBroadcaster();}
-      if (joint_state) {endJointStateBroadcaster();}
+      destroyBroadcasters();
+      
       if (command) {endJointStateCommander();}
       endNode();
       digitalWrite(14, LOW); // g1
@@ -109,221 +106,179 @@ void MicroROSArduino::spin()
       break;
   }
 }
-
-void MicroROSArduino::beginBatteryBroadcaster(void (*function)(rcl_timer_t*, int64_t), String topic, float rate)
+   
+uint8_t MicroROSArduino::beginBroadcaster(teSensorType type, String topic, float rate, void (*function)(rcl_timer_t*, int64_t), int NumJoints, String JointNames[]) 
 {
-  battery_function = function;
-  battery_topic = topic;
-  battery_rate = rate;
-  //createBatteryBroadcaster();
-  battery = true;
+	uint8_t id = numSensors;
+	//initialize the sensor object
+	sensors[numSensors].type = type;
+	sensors[numSensors].topic = topic;
+	sensors[numSensors].rate = rate;
+	sensors[numSensors].function = function;  
+	switch ( type )
+	{
+	case eeBattery:		
+		sensors[numSensors].msgIndex = numBatterys;
+		numBatterys++;	
+		break;
+	case eeIMU:			
+		sensors[numSensors].msgIndex = numIMUs;
+		numIMUs++;		
+		break;
+	default: break;
+	}
+	
+	//There is only one joint_state_msg
+	if ( type == eeJointState )
+	{
+  		// create joint state msg data
+  		rosidl_runtime_c__String__Sequence__init(&joint_state_msg.name, NumJoints);
+  		for ( int i = 0; i < NumJoints; i++ ) {
+     		rosidl_runtime_c__String__assignn(&joint_state_msg.name.data[i], JointNames[i].c_str(), JointNames[i].length());
+  		}
+  		joint_state_msg.position.data = (double *) malloc(NumJoints * sizeof(double));
+  		joint_state_msg.position.size= NumJoints;
+  		joint_state_msg.position.capacity = NumJoints;
+  		for ( int i = 0; i < NumJoints; i++ ) {
+     		joint_state_msg.position.data[i] = 0.0;
+  		}
+  		joint_state_msg.velocity.data = (double *) malloc(NumJoints * sizeof(double));
+  		joint_state_msg.velocity.size = NumJoints;
+  		joint_state_msg.velocity.capacity = NumJoints;
+  		for ( int i = 0; i < NumJoints; i++ ) {
+     		joint_state_msg.velocity.data[i] = 0.0;
+  		}
+  		joint_state_msg.effort.data = (double *) malloc(NumJoints * sizeof(double));
+  		joint_state_msg.effort.size = NumJoints;
+  		joint_state_msg.effort.capacity = NumJoints;
+  		for ( int i = 0; i < NumJoints; i++ ) {
+     		joint_state_msg.effort.data[i] = 0.0;
+  		}
+	}  
+	numSensors++;	
+	
+	return id;
+}
+void MicroROSArduino::endBroadcaster(uint8_t sensor_id)
+{
+	//place holder for future, user (sketch) might call this
 }
 
-void MicroROSArduino::createBatteryBroadcaster()
+void MicroROSArduino::createBroadcasters()
 {
-  // create battery publisher
-  if (rclc_publisher_init_default(
-    &battery_broadcaster,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, BatteryState),
-    String("arduino/" + battery_topic).c_str()) != RCL_RET_OK) {
-    errorLoop();
-  }
-  // create battery timer,
-  if (rclc_timer_init_default(
-    &battery_timer,
-    &support,
-    RCL_MS_TO_NS(1000/battery_rate),
-    battery_function) != RCL_RET_OK) {
-    errorLoop();
-  }
-  // create battery executor
-  if (rclc_executor_init(&battery_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
-    errorLoop();
-  }
-  if (rclc_executor_add_timer(&battery_executor, &battery_timer) != RCL_RET_OK) {
-    errorLoop();
-  }
+	for ( int i = 0; i < MAX_SENSORS; i++ )
+	{
+		if ( sensors[i].topic.length() != 0 )
+		{
+ 			// create sensor publisher
+			switch ( sensors[i].type )
+			{
+			case eeBattery:
+ 				if (rclc_publisher_init_default(
+			    		&sensors[i].broadcaster,
+			    		&node,
+			    		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, BatteryState),
+			    		String("arduino/" + sensors[i].topic).c_str()) != RCL_RET_OK) {
+			    	errorLoop();
+				}
+				break;
+			case eeRange:
+ 				if (rclc_publisher_init_default(
+			    		&sensors[i].broadcaster,
+			    		&node,
+			    		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Range),
+			    		String("arduino/" + sensors[i].topic).c_str()) != RCL_RET_OK) {
+			    	errorLoop();
+				}
+				break;
+			case eeIMU:
+ 				if (rclc_publisher_init_default(
+			    		&sensors[i].broadcaster,
+			    		&node,
+			    		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
+			    		String("arduino/" + sensors[i].topic).c_str()) != RCL_RET_OK) {
+			    	errorLoop();
+				}
+				break;
+			case eeJointState:
+ 				if (rclc_publisher_init_default(
+			    		&sensors[i].broadcaster,
+			    		&node,
+			    		ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
+			    		String("arduino/" + sensors[i].topic).c_str()) != RCL_RET_OK) {
+			    	errorLoop();
+				}
+				break;
+			default:
+				break;
+			}
+			
+  			// create sensor timer,
+			if (rclc_timer_init_default(
+					&sensors[i].timer,
+					&support,
+					RCL_MS_TO_NS(1000/sensors[i].rate),
+					sensors[i].function) != RCL_RET_OK) {
+				errorLoop();
+			}
+			// create sensor executor
+			if (rclc_executor_init(&sensors[i].executor, &support.context, 1, &allocator) != RCL_RET_OK) {
+				errorLoop();
+			}
+			if (rclc_executor_add_timer(&sensors[i].executor, &sensors[i].timer) != RCL_RET_OK) {
+				errorLoop();
+			}
+		}
+	}
+}
+void MicroROSArduino::publishBroadcaster(uint8_t id)
+{
+	int index = sensors[id].msgIndex;
+	switch ( sensors[id].type )
+	{
+	case eeBattery:
+  		if ( rcl_publish(&sensors[id].broadcaster, &battery_msg[index], NULL) != RCL_RET_OK) {}
+  		break;
+  	case eeRange:
+  		if ( rcl_publish(&sensors[id].broadcaster, &range_msg, NULL) != RCL_RET_OK) {}
+  		break;
+  	case eeIMU:
+  		if ( rcl_publish(&sensors[id].broadcaster, &imu_msg[index], NULL) != RCL_RET_OK) {}
+  		break;
+  	case eeJointState:
+  		if ( rcl_publish(&sensors[id].broadcaster, &joint_state_msg, NULL) != RCL_RET_OK) {}
+  		break;
+  	default:
+  		break;
+  	}
 }
 
-void MicroROSArduino::endBatteryBroadcaster()
+void MicroROSArduino::spinBroadcasters()
 {
-  if (rcl_publisher_fini(&battery_broadcaster, &node) != RCL_RET_OK) {errorLoop();}
-  if (rcl_timer_fini(&battery_timer) != RCL_RET_OK) {errorLoop();}
-  rclc_executor_fini(&battery_executor);
+	//go through list of broadcasters and spin
+	for ( int i = 0; i < MAX_SENSORS; i++ )
+	{
+		if ( sensors[i].topic.length() > 0 ) 
+    		rclc_executor_spin_some(&sensors[i].executor, RCL_MS_TO_NS(20));
+	}	
 }
 
-void MicroROSArduino::publishBattery()
+void MicroROSArduino::destroyBroadcasters()
 {
-  if (rcl_publish(&battery_broadcaster, &battery_msg, NULL) != RCL_RET_OK) {}
+	//go through list finishing each sensor
+	for ( int i = 0; i < MAX_SENSORS; i++ )
+	{
+		if ( sensors[i].topic.length() > 0 ) 
+		{
+			if (rcl_publisher_fini(&sensors[i].broadcaster, &node) != RCL_RET_OK) {errorLoop();}
+	  		if (rcl_timer_fini(&sensors[i].timer) != RCL_RET_OK) {errorLoop();}
+  			rclc_executor_fini(&sensors[i].executor);
+  		}
+	}
 }
 
-void MicroROSArduino::beginRangeBroadcaster(void (*function)(rcl_timer_t*, int64_t), String topic, float rate)
-{
-  range_function = function;
-  range_topic = topic;
-  range_rate = rate;
-  //createRangeBroadcaster();
-  range = true;
-}
+//-----------------------------------------------------------------------------------------------------------------
 
-void MicroROSArduino::createRangeBroadcaster()
-{
-  // create range publisher
-  if (rclc_publisher_init_default(
-    &range_broadcaster,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Range),
-    String("arduino/" + range_topic).c_str()) != RCL_RET_OK) {
-    errorLoop();
-  }
-  // create range timer,
-  if (rclc_timer_init_default(
-    &range_timer,
-    &support,
-    RCL_MS_TO_NS(1000/range_rate),
-    range_function) != RCL_RET_OK) {
-    errorLoop();
-  }
-  // create range executor
-  if (rclc_executor_init(&range_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
-    errorLoop();
-  }
-  if (rclc_executor_add_timer(&range_executor, &range_timer) != RCL_RET_OK) {
-    errorLoop();
-  }
-}
-
-void MicroROSArduino::endRangeBroadcaster()
-{
-  if (rcl_publisher_fini(&range_broadcaster, &node) != RCL_RET_OK) {errorLoop();}
-  if (rcl_timer_fini(&range_timer) != RCL_RET_OK) {errorLoop();}
-  rclc_executor_fini(&range_executor);
-}
-
-void MicroROSArduino::publishRange()
-{
-  if (rcl_publish(&range_broadcaster, &range_msg, NULL) != RCL_RET_OK) {}
-}
-
-void MicroROSArduino::beginImuBroadcaster(void (*function)(rcl_timer_t*, int64_t), String topic, float rate)
-{
-  imu_function = function;
-  imu_topic = topic;
-  imu_rate = rate;
-  //createImuBroadcaster();
-  imu = true;
-}
-
-void MicroROSArduino::createImuBroadcaster()
-{
-  // create imu publisher
-  if (rclc_publisher_init_default(
-    &imu_broadcaster,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-    String("arduino/" + imu_topic).c_str()) != RCL_RET_OK) {
-    errorLoop();
-  }
-  // create imu timer,
-  if (rclc_timer_init_default(
-    &imu_timer,
-    &support,
-    RCL_MS_TO_NS(1000/imu_rate),
-    imu_function) != RCL_RET_OK) {
-    errorLoop();
-  }
-  // create imu executor
-  if (rclc_executor_init(&imu_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
-    errorLoop();
-  }
-  if (rclc_executor_add_timer(&imu_executor, &imu_timer) != RCL_RET_OK) {
-    errorLoop();
-  }
-}
-
-void MicroROSArduino::endImuBroadcaster()
-{
-  if (rcl_publisher_fini(&imu_broadcaster, &node) != RCL_RET_OK) {errorLoop();}
-  if (rcl_timer_fini(&imu_timer) != RCL_RET_OK) {errorLoop();}
-  rclc_executor_fini(&imu_executor);
-}
-
-void MicroROSArduino::publishImu()
-{
-  if (rcl_publish(&imu_broadcaster, &imu_msg, NULL) != RCL_RET_OK) {}
-}
-
-void MicroROSArduino::beginJointStateBroadcaster(void (*function)(rcl_timer_t*, int64_t), String topic, float rate, int NumJoints, String JointNames[])
-{
-  joint_state_function = function;
-  joint_state_topic = topic;
-  joint_state_rate = rate;
-  // create joint state msg data
-  rosidl_runtime_c__String__Sequence__init(&joint_state_msg.name, NumJoints);
-  for ( int i = 0; i < NumJoints; i++ ) {
-     rosidl_runtime_c__String__assignn(&joint_state_msg.name.data[i], JointNames[i].c_str(), JointNames[i].length());
-  }
-  joint_state_msg.position.data = (double *) malloc(NumJoints * sizeof(double));
-  joint_state_msg.position.size= NumJoints;
-  joint_state_msg.position.capacity = NumJoints;
-  for ( int i = 0; i < NumJoints; i++ ) {
-     joint_state_msg.position.data[i] = 0.0;
-  }
-  joint_state_msg.velocity.data = (double *) malloc(NumJoints * sizeof(double));
-  joint_state_msg.velocity.size = NumJoints;
-  joint_state_msg.velocity.capacity = NumJoints;
-  for ( int i = 0; i < NumJoints; i++ ) {
-     joint_state_msg.velocity.data[i] = 0.0;
-  }
-  joint_state_msg.effort.data = (double *) malloc(NumJoints * sizeof(double));
-  joint_state_msg.effort.size = NumJoints;
-  joint_state_msg.effort.capacity = NumJoints;
-  for ( int i = 0; i < NumJoints; i++ ) {
-     joint_state_msg.effort.data[i] = 0.0;
-  }
-  //createJointStateBroadcaster();
-  joint_state = true;
-}
-
-void MicroROSArduino::createJointStateBroadcaster()
-{
-  // create joint state publisher
-  if (rclc_publisher_init_default(
-    &joint_state_broadcaster,
-    &node,
-    ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
-    String("arduino/" + joint_state_topic).c_str()) != RCL_RET_OK) {
-    errorLoop();
-  }
-  // create joint state timer,
-  if (rclc_timer_init_default(
-    &joint_state_timer,
-    &support,
-    RCL_MS_TO_NS(1000/joint_state_rate),
-    joint_state_function) != RCL_RET_OK) {
-    errorLoop();
-  }
-  // create joint state executor
-  if (rclc_executor_init(&joint_state_executor, &support.context, 1, &allocator) != RCL_RET_OK) {
-    errorLoop();
-  }
-  if (rclc_executor_add_timer(&joint_state_executor, &joint_state_timer) != RCL_RET_OK) {
-    errorLoop();
-  }
-}
-
-void MicroROSArduino::endJointStateBroadcaster()
-{
-  if (rcl_publisher_fini(&joint_state_broadcaster, &node) != RCL_RET_OK) {errorLoop();}
-  if (rcl_timer_fini(&joint_state_timer) != RCL_RET_OK) {errorLoop();}
-  rclc_executor_fini(&joint_state_executor);
-}
-
-void MicroROSArduino::publishJointState()
-{
-  if (rcl_publish(&joint_state_broadcaster, &joint_state_msg, NULL) != RCL_RET_OK) {}
-}
 
 void MicroROSArduino::beginJointStateCommander(void (*function)(const void*), String topic, int NumJoints, String JointNames[])
 {

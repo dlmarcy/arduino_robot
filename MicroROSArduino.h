@@ -1,7 +1,9 @@
 #ifndef MICROROSARDUINO_H
 #define MICROROSARDUINO_H
 
+#include "Hashtable.h"
 #include "Arduino.h"
+
 #include <micro_ros_arduino.h>
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
@@ -13,86 +15,75 @@
 #include <sensor_msgs/msg/joint_state.h>
 #include <rosidl_runtime_c/string_functions.h>
 
+#define MAX_SENSORS 4
+#define MAX_BATTERY 2
+#define MAX_IMU 2
+#define MAX_RANGE 2
+
 class MicroROSArduino
 {
-  public:
+public:
+
+	enum teSensorType { eeBattery = 0, eeRange, eeIMU, eeJointState, };
+	typedef struct {
+		teSensorType	type;		//type of sensor: battery, imu, etc.
+		int				msgIndex;	//index into msg array for this sensor
+    	String 			topic;		//unique to this sensor
+    	float 			rate;
+    	rcl_timer_t 	timer;
+    	rclc_executor_t executor;
+    	rcl_publisher_t broadcaster;
+    	void            (*function)(rcl_timer_t*, int64_t);
+	} tsSensor;
+	
+public:
     MicroROSArduino();
+    void spin();   
+    uint8_t beginBroadcaster(teSensorType type, String topic, float rate, void (*function)(rcl_timer_t*, int64_t), int jointNum=-1, String jointNames[]=nullptr);
+    void endBroadcaster(uint8_t sensor_id);
+    void publishBroadcaster(uint8_t sensor_id);
+	uint8_t getMessageIndex(uint8_t sensor_id)	{return sensors[sensor_id].msgIndex;}
+	
+    sensor_msgs__msg__BatteryState 	battery_msg[MAX_BATTERY];
+    sensor_msgs__msg__Imu 			imu_msg[MAX_IMU];    
+    sensor_msgs__msg__Range 		range_msg[MAX_RANGE];
+    sensor_msgs__msg__JointState 	joint_state_msg;		//there is only one of these
+    
+private:    
     void beginSession();
     void endSession();
     void endNode();
     void errorLoop();
-    void spin();
-    // battery broadcaster
-    void beginBatteryBroadcaster(void (*battery_function)(rcl_timer_t*, int64_t), String topic, float rate);
-    void createBatteryBroadcaster();
-    void endBatteryBroadcaster();
-    void publishBattery();
-    sensor_msgs__msg__BatteryState battery_msg;
-    // range broadcaster
-    void beginRangeBroadcaster(void (*range_function)(rcl_timer_t*, int64_t), String topic, float rate);
-    void createRangeBroadcaster();
-    void endRangeBroadcaster();
-    void publishRange();
-    sensor_msgs__msg__Range range_msg;
-    // imu broadcaster
-    void beginImuBroadcaster(void (*imu_function)(rcl_timer_t*, int64_t), String topic, float rate);
-    void createImuBroadcaster();
-    void endImuBroadcaster();
-    void publishImu();
-    sensor_msgs__msg__Imu imu_msg;
-    // joint state broadcaster
-    void beginJointStateBroadcaster(void (*joint_state_function)(rcl_timer_t*, int64_t), String topic, float rate, int NumJoints, String JointNames[]);
-    void createJointStateBroadcaster();
-    void endJointStateBroadcaster();
-    void publishJointState();
-    sensor_msgs__msg__JointState joint_state_msg;
+    void createBroadcasters();
+    void spinBroadcasters();
+    void destroyBroadcasters();
+    
+public:    
     // joint state commander
     void beginJointStateCommander(void (*command_function)(const void*), String topic, int NumJoints, String JointNames[]);
     void createJointStateCommander();
     void endJointStateCommander();
-    sensor_msgs__msg__JointState command_msg;
-  private:
+
+    sensor_msgs__msg__JointState 	command_msg;
+    
+private:
     rcl_allocator_t allocator;
-    rclc_support_t support;
-    rcl_node_t node;
-    // battery broadcaster
-    rclc_executor_t battery_executor;
-    rcl_timer_t battery_timer;
-    rcl_publisher_t battery_broadcaster;
-    void (*battery_function)(rcl_timer_t*, int64_t);
-    String battery_topic;
-    float battery_rate;
-    bool battery;
-    // range broadcaster
-    rclc_executor_t range_executor;
-    rcl_timer_t range_timer;
-    rcl_publisher_t range_broadcaster;
-    void (*range_function)(rcl_timer_t*, int64_t);
-    String range_topic;
-    float range_rate;
-    bool range;
-    // imu broadcaster
-    rclc_executor_t imu_executor;
-    rcl_timer_t imu_timer;
-    rcl_publisher_t imu_broadcaster;
-    void (*imu_function)(rcl_timer_t*, int64_t);
-    String imu_topic;
-    float imu_rate;
-    bool imu;
-    // joint state broadcaster
-    rclc_executor_t joint_state_executor;
-    rcl_timer_t joint_state_timer;
-    rcl_publisher_t joint_state_broadcaster;
-    void (*joint_state_function)(rcl_timer_t*, int64_t);
-    String joint_state_topic;
-    float joint_state_rate;
-    bool joint_state;
+    rclc_support_t 	support;
+    rcl_node_t 		node;
+    
+    int numSensors;
+    int numBatterys; 
+    int numIMUs;
+   	tsSensor sensors[MAX_SENSORS];
+
+ 
     // joint state commander
     rclc_executor_t command_executor;
     rcl_subscription_t joint_state_commander;
     void (*command_function)(const void*);
     String command_topic;
     bool command;
+    
     // Agent connection status
     enum states {
       WAITING_AGENT,
