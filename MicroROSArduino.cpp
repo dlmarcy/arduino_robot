@@ -1,21 +1,21 @@
-
 #include "MicroROSArduino.h"
 
 MicroROSArduino::MicroROSArduino()
 {
   // create transport
   set_microros_transports();
-
-  numSensors = 0;
-  numBatterys = 0;
-  numIMUs = 0;
+  // set all counters to 0
+  numSensors = numBattery = numPressure = numLight = numImu = 0;
+  numJointState = numJoyStick = numMagnet = numGps = numRange = 0;
+  numHumidity = numTemperature = 0;
+  // identify there are no sensors
   for ( int i = 0; i < MAX_SENSORS; i++ )
   {
-  	sensors[i].msgIndex = -1;
-  }	
-  
+    sensors[i].msgIndex = -1;
+  }
+  // identify there are no commanders
   command = false;
-  // init finite state machine to auto re-connect to micro_ros_agent
+  // initilize finite state machine to auto re-connect to micro_ros_agent
   state = WAITING_AGENT;
 }
 
@@ -35,7 +35,8 @@ void MicroROSArduino::errorLoop()
 
 void MicroROSArduino::spin()
 {
-  switch(state) {
+  switch(state) 
+  {
     case WAITING_AGENT:
       state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_AVAILABLE : WAITING_AGENT;
       digitalWrite(14, HIGH); // g1
@@ -45,50 +46,48 @@ void MicroROSArduino::spin()
       delay(200);
       break;
     case AGENT_AVAILABLE:
+      state = AGENT_CONNECTED;
       createSession();
-	  createBroadcasters();
-	  
+      createBroadcasters();	  
       if (command) {createJointStateCommander();}
-      
       digitalWrite(14, LOW); // g1
       digitalWrite(15, HIGH); // r1
       digitalWrite(22, LOW); // g2
       digitalWrite(23, LOW); // r2
-      state = AGENT_CONNECTED;
       break;
     case AGENT_CONNECTED:
       state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_CONNECTED : AGENT_DISCONNECTED;
       if (state == AGENT_CONNECTED) 
       {
-          // re sync if neccessary
-          if ((millis()-re_sync_time) > 60000) 
-          {
-              rmw_uros_sync_session(10);
-          }
-          //go through list of broadcasters and spin
-	      for ( int i = 0; i < numSensors; i++ )
-	      {
-              rclc_executor_spin_some(&sensors[i].executor, RCL_MS_TO_NS(5));
-	      }	
-	      // go through list of commanders and spin
-          if (command) {rclc_executor_spin_some(&command_executor, RCL_MS_TO_NS(5));}
-          digitalWrite(14, LOW); // g1
-          digitalWrite(15, LOW); // r1
-          digitalWrite(22, HIGH); // g2
-          digitalWrite(23, LOW); // r2
+        // re sync if neccessary
+        if ((millis()-re_sync_time) > 60000) 
+        {
+          rmw_uros_sync_session(10);
+          re_sync_time = millis();
+        }
+        //go through list of broadcasters and spin
+	for ( int i = 0; i < numSensors; i++ )
+	{
+          rclc_executor_spin_some(&sensors[i].executor, RCL_MS_TO_NS(5));
+        }
+        // go through list of commanders and spin
+        if (command) {rclc_executor_spin_some(&command_executor, RCL_MS_TO_NS(5));}
+        digitalWrite(14, LOW); // g1
+        digitalWrite(15, LOW); // r1
+        digitalWrite(22, HIGH); // g2
+        digitalWrite(23, LOW); // r2
       }
       break;
     case AGENT_DISCONNECTED:
+      state = WAITING_AGENT;
       destroySession();
       destroyBroadcasters();
-      
       if (command) {destroyJointStateCommander();}
       destroyNode();
       digitalWrite(14, LOW); // g1
       digitalWrite(15, LOW); // r1
       digitalWrite(22, LOW); // g2
       digitalWrite(23, HIGH); // r2
-      state = WAITING_AGENT;
       break;
     default:
       break;
