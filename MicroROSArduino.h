@@ -9,44 +9,63 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <sensor_msgs/msg/battery_state.h>
-#include <sensor_msgs/msg/range.h>
+#include <sensor_msgs/msg/fluid_pressure.h>
+#include <sensor_msgs/msg/illuminance.h>
 #include <sensor_msgs/msg/imu.h>
 #include <sensor_msgs/msg/joint_state.h>
+#include <sensor_msgs/msg/joy.h>
+#include <sensor_msgs/msg/magnetic_field.h>
+#include <sensor_msgs/msg/nav_sat_fix.h>
+#include <sensor_msgs/msg/range.h>
+#include <sensor_msgs/msg/relative_humidity.h>
+#include <sensor_msgs/msg/temperature.h>
 #include <rosidl_runtime_c/string_functions.h>
 
 #define MAX_SENSORS 4
 #define MAX_BATTERY 2
+#define MAX_PRESSURE 2
+#define MAX_LIGHT 2
 #define MAX_IMU 2
-#define MAX_RANGE 2
+#define MAX_JOINTSTATEBROAD 1
+#define MAX_JOYSTICK 2
+#define MAX_MAGNET 2
+#define MAX_GPS 2
+#define MAX_RANGE 4
+#define MAX_HUMIDITY 2
+#define MAX_TEMPERATURE 2
 
 class MicroROSArduino
 {
 public:
-
-	enum teSensorType { eeBattery = 0, eeRange, eeIMU, eeJointState, };
-	typedef struct {
-		teSensorType	type;		//type of sensor: battery, imu, etc.
-		int				msgIndex;	//index into msg array for this sensor
-    	String 			topic;		//unique to this sensor
-    	float 			rate;
-    	rcl_timer_t 	timer;
-    	rclc_executor_t executor;
-    	rcl_publisher_t broadcaster;
-    	void            (*function)(rcl_timer_t*, int64_t);
-	} tsSensor;
+  enum teSensorType { BATTERY = 0, PRESSURE, LIGHT, IMU, JOINTSTATEBROAD, JOYSTICK, MAGNET, GPS, RANGE, HUMIDITY, TEMPERATURE };
+  typedef struct {
+    teSensorType type; //type of sensor: battery, imu, etc.
+    int msgIndex; //index into msg array for this sensor
+    String topic; //unique to this sensor
+    float rate;
+    rcl_timer_t timer;
+    rclc_executor_t executor;
+    rcl_publisher_t broadcaster;
+    void (*function)(rcl_timer_t*, int64_t);
+  } tsSensor;
 	
 public:
-    MicroROSArduino();
-    void spin();   
-    uint8_t beginBroadcaster(teSensorType type, String topic, float rate, void (*function)(rcl_timer_t*, int64_t), int jointNum=-1, String jointNames[]=nullptr);
-    void endBroadcaster(uint8_t sensor_id);
-    void publishBroadcaster(uint8_t sensor_id);
-	uint8_t getMessageIndex(uint8_t sensor_id)	{return sensors[sensor_id].msgIndex;}
-
-	void publishBattery(uint8_t index);
-	void publishRange(uint8_t index);
-	void publishImu(uint8_t index);
-	void publishJointState();
+  MicroROSArduino();
+  void spin();   
+  uint8_t beginBroadcaster(teSensorType type, String topic, float rate, void (*function)(rcl_timer_t*, int64_t), int jointNum=-1, String jointNames[]=nullptr);
+  void endBroadcaster(uint8_t sensor_id);
+  void publishBroadcaster(uint8_t sensor_id);
+  void publishBattery(uint8_t index);
+  void publishPressure(uint8_t index);
+  void publishLight(uint8_t index);
+  void publishImu(uint8_t index);
+  void publishJointStateBroad(uint8_t index);
+  void publishJoystick(uint8_t index);
+  void publishMagnet(uint8_t index);
+  void publishGps(uint8_t index);
+  void publishRange(uint8_t index);
+  void publishHumidity(uint8_t index);
+  void publishTemperature(uint8_t index);
 
     sensor_msgs__msg__BatteryState 	battery_msg[MAX_BATTERY];
     sensor_msgs__msg__Imu 			imu_msg[MAX_IMU];    
