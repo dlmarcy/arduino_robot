@@ -19,31 +19,7 @@ MicroROSArduino::MicroROSArduino()
   state = WAITING_AGENT;
 }
 
-void MicroROSArduino::beginSession()
-{
-  // create allocator
-  allocator = rcl_get_default_allocator();
-  // create init_options
-  if (rclc_support_init(&support, 0, NULL, &allocator) != RCL_RET_OK) {
-    errorLoop();
-  }
-  // create node
-  if (rclc_node_init_default(&node, "micro_ros_arduino_node", "", &support) != RCL_RET_OK) {
-    errorLoop();
-  }
-}
-
-void MicroROSArduino::endSession()
-{
-  rmw_context_t * rmw_context = rcl_context_get_rmw_context(&support.context);
-  (void) rmw_uros_set_context_entity_destroy_session_timeout(rmw_context, 0);
-}
-
-void MicroROSArduino::endNode()
-{
-  if (rcl_node_fini(&node) != RCL_RET_OK) {errorLoop();}
-  rclc_support_fini(&support);
-}
+//---Error----------------------------------------------------------------------------------------------------
 
 void MicroROSArduino::errorLoop()
 {
@@ -54,6 +30,8 @@ void MicroROSArduino::errorLoop()
     delay(200);
   }
 }
+
+//---Spin--------------------------------------------------------------------------------------------------------
 
 void MicroROSArduino::spin()
 {
@@ -67,7 +45,7 @@ void MicroROSArduino::spin()
       delay(200);
       break;
     case AGENT_AVAILABLE:
-      beginSession();
+      createSession();
 	  createBroadcasters();
 	  
       if (command) {createJointStateCommander();}
@@ -80,22 +58,32 @@ void MicroROSArduino::spin()
       break;
     case AGENT_CONNECTED:
       state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_CONNECTED : AGENT_DISCONNECTED;
-      if (state == AGENT_CONNECTED) {
-        spinBroadcasters();
-        
-        if (command) {rclc_executor_spin_some(&command_executor, RCL_MS_TO_NS(20));}
-        digitalWrite(14, LOW); // g1
-        digitalWrite(15, LOW); // r1
-        digitalWrite(22, HIGH); // g2
-        digitalWrite(23, LOW); // r2
+      if (state == AGENT_CONNECTED) 
+      {
+          // re sync if neccessary
+          if ((millis()-re_sync_time) > 60000) 
+          {
+              rmw_uros_sync_session(10);
+          }
+          //go through list of broadcasters and spin
+	      for ( int i = 0; i < numSensors; i++ )
+	      {
+              rclc_executor_spin_some(&sensors[i].executor, RCL_MS_TO_NS(5));
+	      }	
+	      // go through list of commanders and spin
+          if (command) {rclc_executor_spin_some(&command_executor, RCL_MS_TO_NS(5));}
+          digitalWrite(14, LOW); // g1
+          digitalWrite(15, LOW); // r1
+          digitalWrite(22, HIGH); // g2
+          digitalWrite(23, LOW); // r2
       }
       break;
     case AGENT_DISCONNECTED:
-      endSession();
+      destroySession();
       destroyBroadcasters();
       
-      if (command) {endJointStateCommander();}
-      endNode();
+      if (command) {destroyJointStateCommander();}
+      destroyNode();
       digitalWrite(14, LOW); // g1
       digitalWrite(15, LOW); // r1
       digitalWrite(22, LOW); // g2
@@ -106,7 +94,40 @@ void MicroROSArduino::spin()
       break;
   }
 }
-   
+
+//---Session----------------------------------------------------------------------------------------------------
+
+void MicroROSArduino::createSession()
+{
+  // create allocator
+  allocator = rcl_get_default_allocator();
+  // create init_options
+  if (rclc_support_init(&support, 0, NULL, &allocator) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // create node
+  if (rclc_node_init_default(&node, "micro_ros_arduino_node", "", &support) != RCL_RET_OK) {
+    errorLoop();
+  }
+  // sync time
+  rmw_uros_sync_session(1000);
+  re_sync_time = millis();
+}
+
+void MicroROSArduino::destroySession()
+{
+  rmw_context_t * rmw_context = rcl_context_get_rmw_context(&support.context);
+  (void) rmw_uros_set_context_entity_destroy_session_timeout(rmw_context, 0);
+}
+
+void MicroROSArduino::destroyNode()
+{
+  if (rcl_node_fini(&node) != RCL_RET_OK) {errorLoop();}
+  rclc_support_fini(&support);
+}
+
+//---Broadcasters----------------------------------------------------------------------------------------------------
+
 uint8_t MicroROSArduino::beginBroadcaster(teSensorType type, String topic, float rate, void (*function)(rcl_timer_t*, int64_t), int NumJoints, String JointNames[]) 
 {
 	uint8_t id = numSensors;
@@ -159,9 +180,10 @@ uint8_t MicroROSArduino::beginBroadcaster(teSensorType type, String topic, float
 	
 	return id;
 }
+
 void MicroROSArduino::endBroadcaster(uint8_t sensor_id)
 {
-	//place holder for future, user (sketch) might call this
+	// place holder for future, will allow user to remove a broadcaster
 }
 
 void MicroROSArduino::createBroadcasters()
@@ -231,37 +253,6 @@ void MicroROSArduino::createBroadcasters()
 		}
 	}
 }
-void MicroROSArduino::publishBroadcaster(uint8_t id)
-{
-	int index = sensors[id].msgIndex;
-	switch ( sensors[id].type )
-	{
-	case eeBattery:
-  		if ( rcl_publish(&sensors[id].broadcaster, &battery_msg[index], NULL) != RCL_RET_OK) {}
-  		break;
-  	case eeRange:
-  		if ( rcl_publish(&sensors[id].broadcaster, &range_msg, NULL) != RCL_RET_OK) {}
-  		break;
-  	case eeIMU:
-  		if ( rcl_publish(&sensors[id].broadcaster, &imu_msg[index], NULL) != RCL_RET_OK) {}
-  		break;
-  	case eeJointState:
-  		if ( rcl_publish(&sensors[id].broadcaster, &joint_state_msg, NULL) != RCL_RET_OK) {}
-  		break;
-  	default:
-  		break;
-  	}
-}
-
-void MicroROSArduino::spinBroadcasters()
-{
-	//go through list of broadcasters and spin
-	for ( int i = 0; i < MAX_SENSORS; i++ )
-	{
-		if ( sensors[i].topic.length() > 0 ) 
-    		rclc_executor_spin_some(&sensors[i].executor, RCL_MS_TO_NS(20));
-	}	
-}
 
 void MicroROSArduino::destroyBroadcasters()
 {
@@ -277,8 +268,7 @@ void MicroROSArduino::destroyBroadcasters()
 	}
 }
 
-//-----------------------------------------------------------------------------------------------------------------
-
+//---Commanders----------------------------------------------------------------------------------------------------
 
 void MicroROSArduino::beginJointStateCommander(void (*function)(const void*), String topic, int NumJoints, String JointNames[])
 {
@@ -302,6 +292,11 @@ void MicroROSArduino::beginJointStateCommander(void (*function)(const void*), St
   command = true;
 }
 
+void MicroROSArduino::endJointStateCommander()
+{
+	// place holder for future, will allow user to remove a commander
+}
+
 void MicroROSArduino::createJointStateCommander()
 {
   // create joint state commander
@@ -321,10 +316,89 @@ void MicroROSArduino::createJointStateCommander()
   }
 }
 
-void MicroROSArduino::endJointStateCommander()
+void MicroROSArduino::destroyJointStateCommander()
 {
   if (rcl_subscription_fini(&joint_state_commander, &node) != RCL_RET_OK) {errorLoop();}
   rclc_executor_fini(&command_executor);
+}
+
+//---Publishers----------------------------------------------------------------------------------------------------
+
+void MicroROSArduino::publishBroadcaster(uint8_t id)
+{
+	int index = sensors[id].msgIndex;
+	switch ( sensors[id].type )
+	{
+	case eeBattery:
+  		if ( rcl_publish(&sensors[id].broadcaster, &battery_msg[index], NULL) != RCL_RET_OK) {}
+  		break;
+  	case eeRange:
+  		if ( rcl_publish(&sensors[id].broadcaster, &range_msg, NULL) != RCL_RET_OK) {}
+  		break;
+  	case eeIMU:
+  		if ( rcl_publish(&sensors[id].broadcaster, &imu_msg[index], NULL) != RCL_RET_OK) {}
+  		break;
+  	case eeJointState:
+  		if ( rcl_publish(&sensors[id].broadcaster, &joint_state_msg, NULL) != RCL_RET_OK) {}
+  		break;
+  	default:
+  		break;
+  	}
+}
+
+void MicroROSArduino::publishBattery(uint8_t index)
+{
+    stamp_time = rmw_uros_epoch_nanos();
+    battery_msg[index].header.stamp.sec = stamp_time/1000000000;
+    battery_msg[index].header.stamp.nanosec = stamp_time%1000000000;
+	// search for sensor id
+    for ( int id = 0; id < MAX_SENSORS; id++ )
+    {
+        if ((sensors[id].type == eeBattery) && (sensors[id].msgIndex == index)) 
+        {
+            if ( rcl_publish(&sensors[id].broadcaster, &battery_msg[index], NULL) != RCL_RET_OK) {}
+  	        break;
+  	    }
+    }	
+}
+
+void MicroROSArduino::publishRange(uint8_t index)
+{
+	// search for sensor id
+    for ( int id = 0; id < MAX_SENSORS; id++ )
+    {
+        if ((sensors[id].type == eeRange) && (sensors[id].msgIndex == index)) 
+        {
+            if ( rcl_publish(&sensors[id].broadcaster, &range_msg[index], NULL) != RCL_RET_OK) {}
+  	        break;
+  	    }
+    }	
+}
+
+void MicroROSArduino::publishImu(uint8_t index)
+{
+	// search for sensor id
+    for ( int id = 0; id < MAX_SENSORS; id++ )
+    {
+        if ((sensors[id].type == eeIMU) && (sensors[id].msgIndex == index)) 
+        {
+            if ( rcl_publish(&sensors[id].broadcaster, &imu_msg[index], NULL) != RCL_RET_OK) {}
+  	        break;
+  	    }
+    }	
+}
+
+void MicroROSArduino::publishJointState()
+{
+	// search for sensor id
+    for ( int id = 0; id < MAX_SENSORS; id++ )
+    {
+        if (sensors[id].type == eeJointState) 
+        {
+            if ( rcl_publish(&sensors[id].broadcaster, &joint_state_msg, NULL) != RCL_RET_OK) {}
+  	        break;
+  	    }
+    }	
 }
 
 

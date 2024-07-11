@@ -1,7 +1,6 @@
 #ifndef MICROROSARDUINO_H
 #define MICROROSARDUINO_H
 
-#include "Hashtable.h"
 #include "Arduino.h"
 
 #include <micro_ros_arduino.h>
@@ -43,33 +42,40 @@ public:
     void endBroadcaster(uint8_t sensor_id);
     void publishBroadcaster(uint8_t sensor_id);
 	uint8_t getMessageIndex(uint8_t sensor_id)	{return sensors[sensor_id].msgIndex;}
-	
+
+	void publishBattery(uint8_t index);
+	void publishRange(uint8_t index);
+	void publishImu(uint8_t index);
+	void publishJointState();
+
     sensor_msgs__msg__BatteryState 	battery_msg[MAX_BATTERY];
     sensor_msgs__msg__Imu 			imu_msg[MAX_IMU];    
     sensor_msgs__msg__Range 		range_msg[MAX_RANGE];
     sensor_msgs__msg__JointState 	joint_state_msg;		//there is only one of these
     
-private:    
-    void beginSession();
-    void endSession();
-    void endNode();
-    void errorLoop();
-    void createBroadcasters();
-    void spinBroadcasters();
-    void destroyBroadcasters();
-    
 public:    
     // joint state commander
     void beginJointStateCommander(void (*command_function)(const void*), String topic, int NumJoints, String JointNames[]);
-    void createJointStateCommander();
     void endJointStateCommander();
+    void createJointStateCommander();
+    void destroyJointStateCommander();
 
     sensor_msgs__msg__JointState 	command_msg;
+    
+private:    
+    void errorLoop();
+    void createSession();
+    void destroySession();
+    void destroyNode();
+    void createBroadcasters();
+    void destroyBroadcasters();
     
 private:
     rcl_allocator_t allocator;
     rclc_support_t 	support;
     rcl_node_t 		node;
+    unsigned long   re_sync_time;
+    int64_t         stamp_time;
     
     int numSensors;
     int numBatterys; 
