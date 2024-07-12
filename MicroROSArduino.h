@@ -67,55 +67,65 @@ public:
   void publishHumidity(uint8_t index);
   void publishTemperature(uint8_t index);
 
-    sensor_msgs__msg__BatteryState 	battery_msg[MAX_BATTERY];
-    sensor_msgs__msg__Imu 			imu_msg[MAX_IMU];    
-    sensor_msgs__msg__Range 		range_msg[MAX_RANGE];
-    sensor_msgs__msg__JointState 	joint_state_msg;		//there is only one of these
+  sensor_msgs__msg__BatteryState battery_msg[MAX_BATTERY];
+  sensor_msgs__msg__FluidPressure pressure_msg[MAX_BATTERY];
+  sensor_msgs__msg__Illuminance light_msg[MAX_BATTERY];
+  sensor_msgs__msg__Imu imu_msg[MAX_IMU];    
+  sensor_msgs__msg__JointState joint_state_msg; //there is only one of these
+  sensor_msgs__msg__Joy joystick_msg[MAX_IMU];    
+  sensor_msgs__msg__MagneticField magnet_msg[MAX_IMU];    
+  sensor_msgs__msg__NavSatFix gps_msg[MAX_IMU];    
+  sensor_msgs__msg__Range range_msg[MAX_RANGE];
+  sensor_msgs__msg__RelativeHumidity humidity_msg[MAX_IMU];    
+  sensor_msgs__msg__Temperature temperature_msg[MAX_IMU];    
     
 public:    
-    // joint state commander
-    void beginJointStateCommander(void (*command_function)(const void*), String topic, int NumJoints, String JointNames[]);
-    void endJointStateCommander();
-    void createJointStateCommander();
-    void destroyJointStateCommander();
+  // joint state commander
+  void beginJointStateCommander(void (*command_function)(const void*), String topic, int NumJoints, String JointNames[]);
+  void endJointStateCommander();
+  void createJointStateCommander();
+  void destroyJointStateCommander();
 
-    sensor_msgs__msg__JointState 	command_msg;
+  sensor_msgs__msg__JointState command_msg;
     
 private:    
-    void errorLoop();
-    void createSession();
-    void destroySession();
-    void destroyNode();
-    void createBroadcasters();
-    void destroyBroadcasters();
-    
-private:
-    rcl_allocator_t allocator;
-    rclc_support_t 	support;
-    rcl_node_t 		node;
-    unsigned long   re_sync_time;
-    int64_t         stamp_time;
-    
-    int numSensors;
-    int numBatterys; 
-    int numIMUs;
-   	tsSensor sensors[MAX_SENSORS];
+  // Agent connection status
+  enum states { WAITING_AGENT, AGENT_AVAILABLE, AGENT_CONNECTED, AGENT_DISCONNECTED } state;
 
- 
-    // joint state commander
-    rclc_executor_t command_executor;
-    rcl_subscription_t joint_state_commander;
-    void (*command_function)(const void*);
-    String command_topic;
-    bool command;
-    
-    // Agent connection status
-    enum states {
-      WAITING_AGENT,
-      AGENT_AVAILABLE,
-      AGENT_CONNECTED,
-      AGENT_DISCONNECTED
-    } state;
+  void errorLoop();
+  void createSession();
+  void destroySession();
+  void destroyNode();
+  void createBroadcasters();
+  void destroyBroadcasters();
+
+private:
+  rcl_allocator_t allocator;
+  rclc_support_t support;
+  rcl_node_t node;
+  unsigned long re_sync_time;
+  int64_t stamp_time;
+
+  int numSensors;
+  int numBattery; 
+  int numPressure; 
+  int numLight; 
+  int numImu; 
+  int numJointStateBroad; 
+  int numJoy; 
+  int numMagnet; 
+  int numGps; 
+  int numRange; 
+  int numHumidity; 
+  int numTemperature; 
+  tsSensor sensors[MAX_SENSORS];
+
+  // joint state commander
+  rclc_executor_t command_executor;
+  rcl_subscription_t joint_state_commander;
+  void (*command_function)(const void*);
+  String command_topic;
+  bool command;
 };
 
 #endif
