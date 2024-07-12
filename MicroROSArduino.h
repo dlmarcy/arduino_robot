@@ -53,8 +53,8 @@ public:
   MicroROSArduino();
   void spin();   
   uint8_t beginBroadcaster(teSensorType type, String topic, float rate, void (*function)(rcl_timer_t*, int64_t), int jointNum=-1, String jointNames[]=nullptr);
-  void endBroadcaster(uint8_t sensor_id);
-  void publishBroadcaster(uint8_t sensor_id);
+  void endBroadcaster(teSensorType type, uint8_t index);
+//  void publishBroadcaster(uint8_t sensor_id);
   void publishBattery(uint8_t index);
   void publishPressure(uint8_t index);
   void publishLight(uint8_t index);
@@ -68,17 +68,17 @@ public:
   void publishTemperature(uint8_t index);
 
   sensor_msgs__msg__BatteryState battery_msg[MAX_BATTERY];
-  sensor_msgs__msg__FluidPressure pressure_msg[MAX_BATTERY];
-  sensor_msgs__msg__Illuminance light_msg[MAX_BATTERY];
+  sensor_msgs__msg__FluidPressure pressure_msg[MAX_PRESSURE];
+  sensor_msgs__msg__Illuminance light_msg[MAX_LIGHT];
   sensor_msgs__msg__Imu imu_msg[MAX_IMU];    
   sensor_msgs__msg__JointState joint_state_msg; //there is only one of these
-  sensor_msgs__msg__Joy joystick_msg[MAX_IMU];    
-  sensor_msgs__msg__MagneticField magnet_msg[MAX_IMU];    
-  sensor_msgs__msg__NavSatFix gps_msg[MAX_IMU];    
+  sensor_msgs__msg__Joy joystick_msg[MAX_JOYSTICK];    
+  sensor_msgs__msg__MagneticField magnet_msg[MAX_MAGNET];    
+  sensor_msgs__msg__NavSatFix gps_msg[MAX_GPS];    
   sensor_msgs__msg__Range range_msg[MAX_RANGE];
-  sensor_msgs__msg__RelativeHumidity humidity_msg[MAX_IMU];    
-  sensor_msgs__msg__Temperature temperature_msg[MAX_IMU];    
-    
+  sensor_msgs__msg__RelativeHumidity humidity_msg[MAX_HUMIDITY];    
+  sensor_msgs__msg__Temperature temperature_msg[MAX_TEMPERATURE];    
+ 
 public:    
   // joint state commander
   void beginJointStateCommander(void (*command_function)(const void*), String topic, int NumJoints, String JointNames[]);
@@ -112,7 +112,7 @@ private:
   int numLight; 
   int numImu; 
   int numJointStateBroad; 
-  int numJoy; 
+  int numJoyStick; 
   int numMagnet; 
   int numGps; 
   int numRange; 

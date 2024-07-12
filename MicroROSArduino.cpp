@@ -127,7 +127,7 @@ uint8_t MicroROSArduino::beginBroadcaster(teSensorType type, String topic, float
 {
   // add the new sensor in the sensor list at 'id' and return the 'index' in the message list
   uint8_t id = numSensors;
-  uint8_t index;
+  uint8_t index = -1;
   //initialize the sensor object
   sensors[id].type = type;
   sensors[id].topic = topic;
@@ -140,17 +140,13 @@ uint8_t MicroROSArduino::beginBroadcaster(teSensorType type, String topic, float
         sensors[id].msgIndex = numBattery;
         index = numBattery;
         numBattery++;
-      } else {
-        index = -1;
-      }
+      } 
       break;
     case PRESSURE:		
       if ( numPressure < MAX_PRESSURE ) {
         sensors[id].msgIndex = numPressure;
         index = numPressure;
         numPressure++;
-      } else {
-        index = -1;
       }
       break;
     case LIGHT:		
@@ -158,8 +154,6 @@ uint8_t MicroROSArduino::beginBroadcaster(teSensorType type, String topic, float
         sensors[id].msgIndex = numLight;
         index = numLight;
         numLight++;
-      } else {
-        index = -1;
       }
       break;
     case IMU:			
@@ -167,8 +161,6 @@ uint8_t MicroROSArduino::beginBroadcaster(teSensorType type, String topic, float
         sensors[id].msgIndex = numImu;
         index = numImu;
         numImu++;
-      } else {
-        index = -1;
       }
       break;
      case JOINTSTATEBROAD:		
@@ -176,8 +168,6 @@ uint8_t MicroROSArduino::beginBroadcaster(teSensorType type, String topic, float
         sensors[id].msgIndex = numJointStateBroad;
         index = numJointStateBroad;
         numJointStateBroad++;
-      } else {
-        index = -1;
       }
       break;
     case JOYSTICK:		
@@ -185,35 +175,27 @@ uint8_t MicroROSArduino::beginBroadcaster(teSensorType type, String topic, float
         sensors[id].msgIndex = numJoyStick;
         index = numJoyStick;
         numJoyStick++;
-      } else {
-        index = -1;
       }
-     break;
+      break;
     case MAGNET:		
       if ( numMagnet < MAX_MAGNET ) {
         sensors[id].msgIndex = numMagnet;
         index = numMagnet;
         numMagnet++;
-      } else {
-        index = -1;
-      }
-     break;
+      } 
+      break;
     case GPS:		
       if ( numGps < MAX_GPS ) {
         sensors[id].msgIndex = numGps;
         index = numGps;
         numGps++;
-      } else {
-        index = -1;
       }
-     break;
+      break;
     case RANGE:		
       if ( numRange < MAX_RANGE ) {
         sensors[id].msgIndex = numRange;
         index = numRange;
         numRange++;
-      } else {
-        index = -1;
       }
       break;
     case HUMIDITY:		
@@ -221,18 +203,14 @@ uint8_t MicroROSArduino::beginBroadcaster(teSensorType type, String topic, float
         sensors[id].msgIndex = numHumidity;
         index = numHumidity;
         numHumidity++;
-      } else {
-        index = -1;
-      }
+      } 
       break;
     case TEMPERATURE:		
       if ( numTemperature < MAX_TEMPERATURE ) {
         sensors[id].msgIndex = numTemperature;
         index = numTemperature;
         numTemperature++;
-      } else {
-        index = -1;
-      }
+      } 
       break;
    default: 
       break;
@@ -433,29 +411,29 @@ void MicroROSArduino::destroyJointStateCommander()
 }
 
 //---Publishers----------------------------------------------------------------------------------------------------
-
+/*
 void MicroROSArduino::publishBroadcaster(uint8_t id)
 {
 	int index = sensors[id].msgIndex;
 	switch ( sensors[id].type )
 	{
-	case eeBattery:
+	case BATTERY:
   		if ( rcl_publish(&sensors[id].broadcaster, &battery_msg[index], NULL) != RCL_RET_OK) {}
   		break;
-  	case eeRange:
+  	case RANGE:
   		if ( rcl_publish(&sensors[id].broadcaster, &range_msg, NULL) != RCL_RET_OK) {}
   		break;
-  	case eeIMU:
+  	case IMU:
   		if ( rcl_publish(&sensors[id].broadcaster, &imu_msg[index], NULL) != RCL_RET_OK) {}
   		break;
-  	case eeJointState:
+  	case JOINTSTATEBROAD:
   		if ( rcl_publish(&sensors[id].broadcaster, &joint_state_msg, NULL) != RCL_RET_OK) {}
   		break;
   	default:
   		break;
   	}
 }
-
+*/
 void MicroROSArduino::publishBattery(uint8_t index)
 {
   stamp_time = rmw_uros_epoch_nanos();
@@ -523,14 +501,14 @@ void MicroROSArduino::publishImu(uint8_t index)
 void MicroROSArduino::publishJointStateBroad(uint8_t index)
 {
   stamp_time = rmw_uros_epoch_nanos();
-  joint_state_msg[index].header.stamp.sec = stamp_time/1000000000;
-  joint_state_msg[index].header.stamp.nanosec = stamp_time%1000000000;
+  joint_state_msg.header.stamp.sec = stamp_time/1000000000;
+  joint_state_msg.header.stamp.nanosec = stamp_time%1000000000;
   // search for sensor id
   for ( int id = 0; id < numSensors; id++ )
   {
-    if ((sensors[id].type == JOINTSTATEBROAD) && (sensors[id].msgIndex == index)) 
+    if (sensors[id].type == JOINTSTATEBROAD) 
     {
-      if ( rcl_publish(&sensors[id].broadcaster, &joint_state_msg[index], NULL) != RCL_RET_OK) {}
+      if ( rcl_publish(&sensors[id].broadcaster, &joint_state_msg, NULL) != RCL_RET_OK) {}
       break;
     }
   }	
