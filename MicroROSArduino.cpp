@@ -39,10 +39,6 @@ void MicroROSArduino::spin()
   {
     case WAITING_AGENT:
       state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_AVAILABLE : WAITING_AGENT;
-      digitalWrite(14, HIGH); // g1
-      digitalWrite(15, LOW); // r1
-      digitalWrite(22, LOW); // g2
-      digitalWrite(23, LOW); // r2
       delay(200);
       break;
     case AGENT_AVAILABLE:
@@ -50,10 +46,6 @@ void MicroROSArduino::spin()
       createSession();
       createBroadcasters();	  
       if (command) {createJointStateCommander();}
-      digitalWrite(14, LOW); // g1
-      digitalWrite(15, HIGH); // r1
-      digitalWrite(22, LOW); // g2
-      digitalWrite(23, LOW); // r2
       break;
     case AGENT_CONNECTED:
       state = (RMW_RET_OK == rmw_uros_ping_agent(100, 1)) ? AGENT_CONNECTED : AGENT_DISCONNECTED;
@@ -72,10 +64,6 @@ void MicroROSArduino::spin()
         }
         // go through list of commanders and spin
         if (command) {rclc_executor_spin_some(&command_executor, RCL_MS_TO_NS(5));}
-        digitalWrite(14, LOW); // g1
-        digitalWrite(15, LOW); // r1
-        digitalWrite(22, HIGH); // g2
-        digitalWrite(23, LOW); // r2
       }
       break;
     case AGENT_DISCONNECTED:
@@ -84,10 +72,6 @@ void MicroROSArduino::spin()
       destroyBroadcasters();
       if (command) {destroyJointStateCommander();}
       destroyNode();
-      digitalWrite(14, LOW); // g1
-      digitalWrite(15, LOW); // r1
-      digitalWrite(22, LOW); // g2
-      digitalWrite(23, HIGH); // r2
       break;
     default:
       break;
